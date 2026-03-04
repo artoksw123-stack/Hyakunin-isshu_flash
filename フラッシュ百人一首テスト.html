@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>フラッシュ百人一首</title>
+    
+    <!-- 筆文字フォント（Yuji Syuku）とベースフォントの読み込み -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Mincho&family=Yuji+Syuku&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #e8dfa0; /* 画像に合わせた薄黄色 */
+            font-family: "Sawarabi Mincho", "Hiragino Mincho ProN", "MS P明朝", serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            background: #fff;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            max-width: 90vw;
+            max-height: 95vh;
+            overflow-y: auto;
+        }
+
+        button, input, label {
+            touch-action: manipulation;
+        }
+
+        #setup { margin-bottom: 20px; }
+        input[type="number"] { width: 60px; margin-right: 10px; padding: 5px; }
+        button { 
+            padding: 8px 20px; 
+            cursor: pointer; 
+            border-radius: 4px; 
+            border: 1px solid #ccc; 
+            background: #eee;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+        button:hover { background: #ddd; }
+
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 8px;
+            text-align: left;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fafafa;
+            font-size: 0.9rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .checkbox-grid label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        .checkbox-grid input {
+            margin-right: 6px;
+            width: auto;
+        }
+
+        .card-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        /* 左側のタイマーゲージ */
+        #timer-gauge-container {
+            width: 15px; /* 画像に合わせて太め */
+            height: 400px;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 0; /* 画像に合わせて四角く */
+            overflow: hidden;
+            position: relative;
+        }
+
+        #timer-bar {
+            width: 100%;
+            height: 100%;
+            background: #e5b022; /* オレンジがかった黄色 */
+            position: absolute;
+            bottom: 0;
+            /* JSの更新間隔(50ms)に合わせて高さをなめらかに変化させる */
+            transition: height 0.05s linear; 
+        }
+
+        /* 札のデザイン */
+        .card {
+            width: 280px;
+            height: 400px;
+            background-color: #fffaf0; /* クリーム色 */
+            border: 12px solid #2f4f4f; /* 濃い緑の枠線 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.2);
+            border-radius: 0; /* 四角く */
+            overflow: hidden;
+            position: relative;
+        }
+
+        #card-text {
+            writing-mode: vertical-rl;
+            -webkit-writing-mode: vertical-rl;
+            text-orientation: upright;
+            font-family: 'Yuji Syuku', serif; /* 筆文字フォント */
+            font-size: 3.5rem;
+            line-height: 1.8; /* 行間を広めに */
+            letter-spacing: 0.35em; /* 文字間を広めに */
+            /* ▼ 厳密に5文字分に高さを固定する設定 ▼ 
+               百人一首の下の句は最大15文字なため、5文字固定にすれば必ず3行(5, 5, 5 または 5, 5, 4)に収まります。
+               1em*5 + 0.35em*4 = 6.4em。安全マージンを取り 6.8em に設定 */
+            height: 6.8em;
+            display: block;
+            text-align: left; /* 縦書きでは上揃えになる */
+        }
+
+        /* 上の句（答え）の表示モード */
+        #card-text.answer-mode {
+            color: #d32f2f;
+            text-align: center; /* 縦書きにおける上下中央揃え */
+        }
+
+        /* カウントダウン時は横書きで中央配置 */
+        #card-text.countdown-mode {
+            writing-mode: horizontal-tb;
+            -webkit-writing-mode: horizontal-tb;
+            letter-spacing: normal;
+            font-size: 5rem;
+            height: auto;
+            text-align: center;
+        }
+
+        @keyframes slideDownOut {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(120%); opacity: 0; }
+        }
+        @keyframes slideDownIn {
+            0% { transform: translateY(-120%); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        .animate-out { animation: slideDownOut 0.4s ease-in forwards; }
+        .animate-in { animation: slideDownIn 0.4s ease-out forwards; }
+
+        /* フルスクリーン時のレイアウト */
+        #fullscreen-wrapper.is-fullscreen {
+            background-color: #e8dfa0; /* 画像に合わせた薄黄色 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0; left: 0;
+            z-index: 9999;
+        }
+
+        #controls-overlay {
+            display: none;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            gap: 15px;
+        }
+        #fullscreen-wrapper.is-fullscreen #controls-overlay { display: flex; }
+        
+        #controls-overlay button {
+            background: #f8f8f8;
+            color: #000;
+            border: 1px solid #ccc;
+            font-weight: normal;
+            padding: 8px 15px;
+            font-size: 0.9rem;
+        }
+
+        #fullscreen-wrapper.is-fullscreen .card-container {
+            gap: 2.5vh;
+        }
+
+        #fullscreen-wrapper.is-fullscreen .card {
+            height: 85vh;
+            width: 60vh;
+            border-width: 2.5vh;
+        }
+        #fullscreen-wrapper.is-fullscreen #timer-gauge-container {
+            height: 85vh;
+            width: 2.5vh;
+        }
+        
+        /* フルスクリーン時の5文字改行・文字サイズ調整 */
+        #fullscreen-wrapper.is-fullscreen #card-text {
+            font-size: 9.2vh; /* 文字の大きさ */
+            line-height: 1.8;
+            letter-spacing: 0.35em;
+            height: 6.8em; /* 5文字で改行する高さ */
+        }
+        #fullscreen-wrapper.is-fullscreen #card-text.countdown-mode {
+            font-size: 10vh;
+            letter-spacing: normal;
+            height: auto;
+        }
+
+        /* 右下のステータス表示 */
+        #status-overlay {
+            display: none;
+            position: absolute;
+            bottom: 3vh;
+            right: 5vh;
+            align-items: baseline; /* ベースラインで揃える */
+            color: #2f4f4f; /* 枠線と同じ色 */
+            font-family: 'Yuji Syuku', "Sawarabi Mincho", serif;
+        }
+        #fullscreen-wrapper.is-fullscreen #status-overlay { display: flex; }
+
+        .current-num {
+            font-size: 18vh;
+            line-height: 0.8;
+        }
+        .total-num {
+            font-size: 6vh;
+            margin-left: 1vh;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+
+        #result-screen {
+            padding: 20px;
+            max-width: 800px;
+        }
+        #result-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+            max-height: 60vh;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 15px;
+            background: #fafafa;
+        }
+        .result-item {
+            padding: 10px;
+            background: #fffaf0;
+            border-left: 5px solid #2f4f4f;
+            text-align: left;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        .result-item span {
+            font-weight: bold;
+            color: #2f4f4f;
+            font-size: 0.7rem;
+            display: block;
+        }
+
+        @media screen and (max-height: 500px), screen and (max-width: 600px) {
+            .container { padding: 1rem; }
+            .checkbox-grid { max-height: 120px; font-size: 0.8rem; }
+            #fullscreen-wrapper.is-fullscreen .card {
+                height: 70vh; width: 48vh; border-width: 1.5vh;
+            }
+            #fullscreen-wrapper.is-fullscreen #timer-gauge-container {
+                height: 70vh; width: 1.5vh;
+            }
+            #fullscreen-wrapper.is-fullscreen #card-text {
+                font-size: 7.5vh; 
+                letter-spacing: 0.35em;
+                height: 6.8em;
+            }
+            .current-num { font-size: 12vh; }
+            .total-num { font-size: 4vh; }
+        }
+
+        @media screen and (max-width: 480px) and (orientation: portrait) {
+            .card { width: 80vw; height: 60vh; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="setup-screen">
+            <h1>フラッシュ百人一首</h1>
+            <div id="setup">
+                <div style="margin-bottom: 15px; text-align: left;">
+                    <label>出題範囲:</label>
+                    <div id="range-checkboxes" class="checkbox-grid">
+                        <label><input type="checkbox" value="all" checked> すべて</label>
+                        <label><input type="checkbox" value="1"> 1枚札(7枚)</label>
+                        <label><input type="checkbox" value="2"> 2枚札(10枚)</label>
+                        <label><input type="checkbox" value="3"> 3枚札(12枚)</label>
+                        <label><input type="checkbox" value="4"> 4枚札(16枚)</label>
+                        <label><input type="checkbox" value="5"> 5枚札(5枚)</label>
+                        <label><input type="checkbox" value="6"> 6枚札(12枚)</label>
+                        <label><input type="checkbox" value="7"> 7枚札(14枚)</label>
+                        <label><input type="checkbox" value="8"> 8枚札(8枚)</label>
+                        <label><input type="checkbox" value="16"> 16枚札(16枚)</label>
+                        <label><input type="checkbox" value="group-1"> 間違えやすい札(32枚)</label>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 10px; text-align: left;">
+                    <label>枚数: <input type="number" id="count" value="100" min="1"></label>
+                    <span id="max-count-label" style="font-size: 0.8rem; color: #666;">(最大: 100枚)</span>
+                </div>
+
+                <div style="margin-bottom: 10px; text-align: left;">
+                    <label>間隔(秒): <input type="number" id="interval" value="5" min="0.5" step="0.5"></label>
+                </div>
+
+                <div style="margin-bottom: 20px; text-align: left; display: flex; flex-direction: column; gap: 8px; background: #f9f9f9; padding: 10px; border-radius: 5px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="show-answer-each" style="width: auto; margin: 0;"> 1枚ごとに答えを表示
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="enable-sound" checked style="width: auto; margin: 0;"> 音を鳴らす
+                    </label>
+                </div>
+
+                <button id="start-btn">スタート</button>
+            </div>
+        </div>
+
+        <div id="fullscreen-wrapper" style="display: none;">
+            <div id="controls-overlay">
+                <button id="pause-btn">一時停止</button>
+                <button id="reset-btn">リセット</button>
+            </div>
+            <div class="card-container">
+                <div id="timer-gauge-container">
+                    <div id="timer-bar"></div>
+                </div>
+                <div id="display-area" class="card">
+                    <div id="card-text"></div>
+                </div>
+            </div>
+            <div id="status-overlay"></div>
+        </div>
+
+        <div id="result-screen" style="display: none;">
+            <h2>今回の練習結果</h2>
+            <div id="result-list"></div>
+            <button id="back-to-title-btn">タイトルに戻る</button>
+        </div>
+    </div>
+
+    <script>
+        const AppState = {
+            allFuda: [
+                { "upper": "む", "lower": "きりたちのほるあきのゆふくれ", "type": "1", "group": "1" },
+                { "upper": "す", "lower": "ゆめのかよひちひとめよくらむ", "type": "1", "group": "0" },
+                { "upper": "め", "lower": "くもかくれにしよはのつきかな", "type": "1", "group": "1" },
+                { "upper": "ふ", "lower": "むへやまかせをあらしといふらむ", "type": "1", "group": "0" },
+                { "upper": "さ", "lower": "いつこもおなしあきのゆふくれ", "type": "1", "group": "1" },
+                { "upper": "ほ", "lower": "たたありあけのつきそのこれる", "type": "1", "group": "0" },
+                { "upper": "せ", "lower": "われてもすゑにあはむとそおもふ", "type": "1", "group": "0" },
+                { "upper": "うか", "lower": "はけしかれとはいのらぬものを", "type": "2", "group": "0" },
+                { "upper": "うら", "lower": "こひにくちなむなこそをしけれ", "type": "2", "group": "0" },
+                { "upper": "つき", "lower": "わかみひとつのあきにはあらねと", "type": "2", "group": "0" },
+                { "upper": "つく", "lower": "こひそつもりてふちとなりぬる", "type": "2", "group": "0" },
+                { "upper": "しの", "lower": "ものやおもふとひとのとふまて", "type": "2", "group": "0" },
+                { "upper": "しら", "lower": "つらぬきとめぬたまそちりける", "type": "2", "group": "0" },
+                { "upper": "もも", "lower": "なほあまりあるむかしなりけり", "type": "2", "group": "1" },
+                { "upper": "もろ", "lower": "はなよりほかにしるひともなし", "type": "2", "group": "0" },
+                { "upper": "ゆう", "lower": "あしのまろやにあきかせそふく", "type": "2", "group": "0" },
+                { "upper": "ゆら", "lower": "ゆくへもしらぬこひのみちかな", "type": "2", "group": "0" },
+                { "upper": "いに", "lower": "けふここのへににほひぬるかな", "type": "3", "group": "1" },
+                { "upper": "いまこ", "lower": "ありあけのつきをまちいてつるかな", "type": "3", "group": "0" },
+                { "upper": "いまわ", "lower": "ひとつてならていふよしもかな", "type": "3", "group": "1" },
+                { "upper": "ちは", "lower": "からくれなゐにみつくくるとは", "type": "3", "group": "0" },
+                { "upper": "ちぎりき", "lower": "すゑのまつやまなみこさしとは", "type": "3", "group": "1" },
+                { "upper": "ちぎりお", "lower": "あはれことしのあきもいぬめり", "type": "3", "group": "0" },
+                { "upper": "ひサ", "lower": "しつこころなくはなのちるらむ", "type": "3", "group": "0" },
+                { "upper": "ひとわ", "lower": "はなそむかしのかににほひける", "type": "3", "group": "0" },
+                { "upper": "ひとも", "lower": "よをおもふゆゑにものおもふみは", "type": "3", "group": "0" },
+                { "upper": "きり", "lower": "ころもかたしきひとりかもねむ", "type": "3", "group": "1" },
+                { "upper": "きみがためは", "lower": "わかころもてにゆきはふりつつ", "type": "3", "group": "1" },
+                { "upper": "きみがためお", "lower": "なかくもかなとおもひけるかな", "type": "3", "group": "0" },
+                { "upper": "はなさ", "lower": "ふりゆくものはわかみなりけり", "type": "4" , "group": "0" },
+                { "upper": "はなの", "lower": "わかみよにふるなかめせしまに", "type": "4", "group": "0" },
+                { "upper": "はるす", "lower": "ころもほすてふあまのかくやま", "type": "4", "group": "1" },
+                { "upper": "はるの", "lower": "かひなくたたむなこそをしけれ", "type": "4", "group": "0" },
+                { "upper": "やす", "lower": "かたふくまでのつきをみしかな", "type": "4", "group": "0" },
+                { "upper": "やえ", "lower": "ひとこそみえねあきはきにけり", "type": "4", "group": "1" },
+                { "upper": "やまざ", "lower": "ひとめもくさもかれぬとおもへは", "type": "4", "group": "1" },
+                { "upper": "やまが", "lower": "なかれもあへぬもみちなりけり", "type": "4", "group": "0" },
+                { "upper": "よも", "lower": "ねやのひまさへつれなかりけり", "type": "4", "group": "0" },
+                { "upper": "よお", "lower": "よにあふさかのせきはゆるさし", "type": "4", "group": "0" },
+                { "upper": "よのなかわ", "lower": "あまのをふねのつなてかなしも", "type": "4", "group": "0" },
+                { "upper": "よのなかよ", "lower": "やまのおくにもしかそなくなる", "type": "4", "group": "0" },
+                { "upper": "かく", "lower": "さしもしらしなもゆるおもひを", "type": "4", "group": "0" },
+                { "upper": "かさ", "lower": "しろきをみれはよそふけにける", "type": "4", "group": "0" },
+                { "upper": "かぜそ", "lower": "みそきそなつのしるしなりける", "type": "4", "group": "0" },
+                { "upper": "かぜお", "lower": "くたけてものをおもふころかな", "type": "4", "group": "0" },
+                { "upper": "みせ", "lower": "ぬれにそぬれしいろはかはらす", "type": "5", "group": "0" },
+                { "upper": "みち", "lower": "みたれそめにしわれならなくに", "type": "5", "group": "1" },
+                { "upper": "みよ", "lower": "ふるさとさむくころもうつなり", "type": "5", "group": "0" },
+                { "upper": "みかき", "lower": "ひるはきえつつものをこそおもへ", "type": "5", "group": "0" },
+                { "upper": "みかの", "lower": "いつみきとてかこひしかるらむ", "type": "5", "group": "0" },
+                { "upper": "たか", "lower": "とやまのかすみたたすもあらなむ", "type": "6", "group": "0" },
+                { "upper": "たき", "lower": "なこそなかれてなほきこえけれ", "type": "6", "group": "0" },
+                { "upper": "たご", "lower": "ふしのたかねにゆきはふりつつ", "type": "6", "group": "0" },
+                { "upper": "たち", "lower": "まつとしきかはいまかへりこむ", "type": "6", "group": "1" },
+                { "upper": "たま", "lower": "しのふることのよはりもそする", "type": "6", "group": "0" },
+                { "upper": "たれ", "lower": "まつもむかしのともならなくに", "type": "6", "group": "1" },
+                { "upper": "こぬ", "lower": "やくやもしほのみもこかれつつ", "type": "6", "group": "0" },
+                { "upper": "この", "lower": "もみちのにしきかみのまにまに", "type": "6", "group": "0" },
+                { "upper": "こい", "lower": "ひとしれすこそおもひそめしか", "type": "6", "group": "1" },
+                { "upper": "これ", "lower": "しるもしらぬもあふさかのせき", "type": "6", "group": "0" },
+                { "upper": "こころあ", "lower": "おきまとはせるしらきくのはな", "type": "6", "group": "0" },
+                { "upper": "こころに", "lower": "こひしかるへきよはのつきかな", "type": "6", "group": "0" },
+                { "upper": "おおえ", "lower": "またふみもみすあまのはしたて", "type": "7", "group": "0" },
+                { "upper": "おおけ", "lower": "わかたつそまにすみそめのそて", "type": "7", "group": "0" },
+                { "upper": "おおこ", "lower": "ひとをもみをもうらみさらまし", "type": "7", "group": "1" },
+                { "upper": "おく", "lower": "こゑきくときそあきはかなしき", "type": "7", "group": "1" },
+                { "upper": "おぐ", "lower": "いまひとたひのみゆきまたなむ", "type": "7", "group": "1" },
+                { "upper": "おと", "lower": "かけしやそてのぬれもこそすれ", "type": "7", "group": "0" },
+                { "upper": "おも", "lower": "うきにたへぬはなみたなりけり", "type": "7", "group": "0" },
+                { "upper": "わび", "lower": "みをつくしてもあはむとそおもふ", "type": "7", "group": "1" },
+                { "upper": "わがい", "lower": "よをうちやまとひとはいふなり", "type": "7", "group": "0" },
+                { "upper": "わがそ", "lower": "ひとこそしらねかわくまもなし", "type": "7", "group": "1" },
+                { "upper": "わすれ", "lower": "けふをかきりのいのちともかな", "type": "7", "group": "1" },
+                { "upper": "わすら", "lower": "ひとのいのちのをしくもあるかな", "type": "7", "group": "1" },
+                { "upper": "わたのはらこ", "lower": "くもゐにまかふおきつしらなみ", "type": "7", "group": "1" },
+                { "upper": "わたのはらや", "lower": "ひとにはつけよあまのつりふね", "type": "7", "group": "1" },
+                { "upper": "なにし", "lower": "ひとにしられてくるよしもかな", "type": "8", "group": "1" },
+                { "upper": "なにはえ", "lower": "みをつくしてやこひわたるへき", "type": "8", "group": "1" },
+                { "upper": "なにはが", "lower": "あはてこのよをすくしてよとや", "type": "8", "group": "0" },
+                { "upper": "なつの", "lower": "くものいつこにつきやとるらむ", "type": "8", "group": "1" },
+                { "upper": "なげき", "lower": "いかにひさしきものとかはしる", "type": "8", "group": "0" },
+                { "upper": "なげけ", "lower": "かこちかほなるわかなみたかな", "type": "8", "group": "0" },
+                { "upper": "ながか", "lower": "みたれてけさはものをこそおもへ", "type": "8", "group": "1" },
+                { "upper": "ながら", "lower": "うしとみしよそいまはこひしき", "type": "8", "group": "0" },
+                { "upper": "あわじ", "lower": "いくよねさめぬすまのせきもり", "type": "16", "group": "0" },
+                { "upper": "あわれ", "lower": "みのいたつらになりぬへきかな", "type": "16", "group": "0" },
+                { "upper": "あらざ", "lower": "いまひとたひのあふこともかな", "type": "16", "group": "1" },
+                { "upper": "あらし", "lower": "たつたのかはのにしきなりけり", "type": "16", "group": "0" },
+                { "upper": "あきか", "lower": "もれいつるつきのかけのさやけさ", "type": "16", "group": "0" },
+                { "upper": "あきの", "lower": "わかころもてはつゆにぬれつつ", "type": "16", "group": "1" },
+                { "upper": "あまつ", "lower": "をとめのすがたしはしととめむ", "type": "16", "group": "0" },
+                { "upper": "あまの", "lower": "みかさのやまにいてしつきかも", "type": "16", "group": "0" },
+                { "upper": "ありあ", "lower": "あかつきはかりうきものはなし", "type": "16", "group": "0" },
+                { "upper": "ありま", "lower": "いでそよひとをわすれやはする", "type": "16", "group": "0" },
+                { "upper": "あさじ", "lower": "あまりてなとかひとのこひしき", "type": "16", "group": "0" },
+                { "upper": "あさぼらけあ", "lower": "よしののさとにふれるしらゆき", "type": "16", "group": "0" },
+                { "upper": "あさぼらけう", "lower": "あらはれわたるせせのあしろき", "type": "16", "group": "0" },
+                { "upper": "あし", "lower": "なかなかしよをひとりかもねむ", "type": "16", "group": "0" },
+                { "upper": "あい", "lower": "むかしはものをおもはさりけり", "type": "16", "group": "0" },
+                { "upper": "あけ", "lower": "なほうらめしきあさほらけかな", "type": "16", "group": "1" }
+            ],
+            currentSession: [],
+            currentIndex: 0,
+            isPaused: false,
+            intervalMs: 5000,
+            countdownTimerId: null,
+            audioCtx: null,
+            settings: {
+                showAnswerEach: false,
+                enableSound: true
+            }
+        };
+
+        let Elements = {};
+
+        const ManagedTimer = {
+            id: null,
+            callback: null,
+            startTime: 0,
+            remaining: 0,
+            duration: 0,
+            start: function(callback, delay) {
+                this.clear();
+                this.callback = callback;
+                this.duration = delay;
+                this.remaining = delay;
+                this.startTime = Date.now();
+                this.id = setTimeout(() => {
+                    this.remaining = 0;
+                    callback();
+                }, delay);
+            },
+            pause: function() {
+                if (this.id !== null) {
+                    clearTimeout(this.id);
+                    this.id = null;
+                    const elapsed = Date.now() - this.startTime;
+                    this.remaining = Math.max(0, this.remaining - elapsed);
+                }
+            },
+            resume: function() {
+                if (this.id === null && this.remaining > 0 && this.callback) {
+                    this.startTime = Date.now();
+                    this.id = setTimeout(() => {
+                        this.remaining = 0;
+                        this.callback();
+                    }, this.remaining);
+                }
+            },
+            clear: function() {
+                if (this.id !== null) clearTimeout(this.id);
+                this.id = null;
+                this.remaining = 0;
+            }
+        };
+
+        const GaugeState = {
+            intervalId: null,
+            duration: 0,
+            startTime: 0,
+            elapsedBeforePause: 0,
+            start: function(duration) {
+                this.clear();
+                this.duration = duration;
+                this.startTime = Date.now();
+                this.elapsedBeforePause = 0;
+                Elements.timerBar.style.height = '100%';
+                this.intervalId = setInterval(() => this.update(), 50);
+            },
+            update: function() {
+                const totalElapsed = this.elapsedBeforePause + (Date.now() - this.startTime);
+                const remainingPct = Math.max(0, 100 - (totalElapsed / this.duration * 100));
+                Elements.timerBar.style.height = remainingPct + '%';
+                if (remainingPct <= 0) clearInterval(this.intervalId);
+            },
+            pause: function() {
+                if (this.intervalId !== null) {
+                    clearInterval(this.intervalId);
+                    this.intervalId = null;
+                    this.elapsedBeforePause += (Date.now() - this.startTime);
+                }
+            },
+            resume: function() {
+                if (this.intervalId === null && this.elapsedBeforePause < this.duration) {
+                    this.startTime = Date.now();
+                    this.intervalId = setInterval(() => this.update(), 50);
+                }
+            },
+            clear: function() {
+                if (this.intervalId !== null) clearInterval(this.intervalId);
+                this.intervalId = null;
+            }
+        };
+
+        function getElements() {
+            Elements = {
+                cardText: document.getElementById('card-text'),
+                statusOverlay: document.getElementById('status-overlay'),
+                timerBar: document.getElementById('timer-bar'),
+                pauseBtn: document.getElementById('pause-btn'),
+                startBtn: document.getElementById('start-btn'),
+                setupScreen: document.getElementById('setup-screen'),
+                fullscreenWrapper: document.getElementById('fullscreen-wrapper'),
+                resultScreen: document.getElementById('result-screen'),
+                resultList: document.getElementById('result-list'),
+                countInput: document.getElementById('count'),
+                maxCountLabel: document.getElementById('max-count-label'),
+                intervalInput: document.getElementById('interval'),
+                showAnswerCheck: document.getElementById('show-answer-each'),
+                soundCheck: document.getElementById('enable-sound'),
+                backToTitleBtn: document.getElementById('back-to-title-btn')
+            };
+        }
+
+        function init() {
+            getElements();
+            updateMaxCount(true);
+            setupEventListeners();
+        }
+
+        function setupEventListeners() {
+            const checkboxes = document.querySelectorAll('#range-checkboxes input');
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', handleRangeSelection);
+            });
+
+            Elements.startBtn.addEventListener('click', startSession);
+            Elements.pauseBtn.addEventListener('click', togglePause);
+            Elements.countInput.addEventListener('input', function() {
+                const max = parseInt(this.max);
+                const val = parseInt(this.value);
+                if (val > max) this.value = max; 
+                else if (val < 1) this.value = 1;   
+            });
+            
+            const resetBtn = document.getElementById('reset-btn');
+            if (resetBtn) resetBtn.addEventListener('click', () => backToTitle(false));
+            if (Elements.backToTitleBtn) Elements.backToTitleBtn.addEventListener('click', () => backToTitle(true));
+        }
+
+        function handleRangeSelection(e) {
+            const checkboxes = Array.from(document.querySelectorAll('#range-checkboxes input'));
+            const clicked = e.target;
+            
+            if (clicked.value === 'all' && clicked.checked) {
+                checkboxes.forEach(cb => { if (cb.value !== 'all') cb.checked = false; });
+            } else if (clicked.checked) {
+                const allCb = checkboxes.find(cb => cb.value === 'all');
+                if (allCb) allCb.checked = false;
+            }
+            
+            const anyChecked = checkboxes.some(cb => cb.checked);
+            if (!anyChecked) {
+                checkboxes.find(cb => cb.value === 'all').checked = true;
+            }
+
+            updateMaxCount(true);
+        }
+
+        function updateMaxCount(autoSet = false) {
+            const checkboxes = Array.from(document.querySelectorAll('#range-checkboxes input:checked'));
+            const selectedValues = checkboxes.map(cb => cb.value);
+            
+            let filtered = [];
+            if (selectedValues.includes('all') || selectedValues.length === 0) {
+                filtered = AppState.allFuda;
+            } else {
+                filtered = AppState.allFuda.filter(fuda => {
+                    const typeMatch = selectedValues.includes(String(fuda.type));
+                    const groupMatch = selectedValues.includes('group-1') && String(fuda.group) === "1";
+                    return typeMatch || groupMatch;
+                });
+            }
+
+            const max = filtered.length;
+            Elements.countInput.max = max;
+            if (autoSet || parseInt(Elements.countInput.value) > max) {
+                Elements.countInput.value = max;
+            }
+            if (Elements.maxCountLabel) {
+                Elements.maxCountLabel.innerText = `(最大: ${max}枚)`;
+            }
+            return filtered;
+        }
+
+        function backToTitle(force = false) {
+            if (!force) {
+                const confirmed = window.confirm("タイトルに戻りますか？（練習データはリセットされます）");
+                if (!confirmed) return;
+            }
+
+            stopAll();
+            exitFullscreen();
+            Elements.setupScreen.style.display = 'block';
+            Elements.resultScreen.style.display = 'none';
+            AppState.currentIndex = 0;
+            AppState.isPaused = false;
+            Elements.cardText.classList.remove('answer-mode', 'countdown-mode');
+        }
+
+        function playBeep(frequency = 880, duration = 0.1) {
+            if (!AppState.settings.enableSound) return;
+            if (!AppState.audioCtx) AppState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = AppState.audioCtx;
+            if (ctx.state === 'suspended') ctx.resume();
+            
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        }
+
+        function startSession() {
+            const count = parseInt(Elements.countInput.value);
+            if (count === 0) {
+                alert("札が選択されていません。");
+                return;
+            }
+
+            AppState.settings.showAnswerEach = Elements.showAnswerCheck.checked;
+            AppState.settings.enableSound = Elements.soundCheck.checked;
+            AppState.intervalMs = parseFloat(Elements.intervalInput.value) * 1000;
+            
+            const filtered = updateMaxCount(false);
+            AppState.currentSession = shuffle(filtered).slice(0, count);
+
+            if (AppState.settings.enableSound) {
+                if (!AppState.audioCtx) AppState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = AppState.audioCtx;
+                if (ctx.state === 'suspended') ctx.resume();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                gain.gain.value = 0;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.1);
+            }
+
+            Elements.setupScreen.style.display = 'none';
+            enterFullscreen();
+
+            AppState.currentIndex = 0;
+            AppState.isPaused = false;
+            Elements.pauseBtn.innerText = "一時停止";
+            
+            stopAll();
+            runCountdown(() => { processNextCard(); });
+        }
+
+        function enterFullscreen() {
+            const wrap = Elements.fullscreenWrapper;
+            wrap.style.display = 'flex';
+            if (wrap.requestFullscreen) {
+                wrap.requestFullscreen().catch(()=>{});
+            } else if (wrap.webkitRequestFullscreen) {
+                wrap.webkitRequestFullscreen();
+            }
+            wrap.classList.add('is-fullscreen');
+        }
+
+        function exitFullscreen() {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+            Elements.fullscreenWrapper.classList.remove('is-fullscreen');
+            Elements.fullscreenWrapper.style.display = 'none';
+        }
+
+        function runCountdown(callback) {
+            Elements.cardText.classList.add('countdown-mode');
+            let count = 3;
+            Elements.cardText.innerText = count;
+            playBeep(440, 0.2);
+            
+            AppState.countdownTimerId = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    Elements.cardText.innerText = count;
+                    playBeep(440, 0.2);
+                } else {
+                    clearInterval(AppState.countdownTimerId);
+                    Elements.cardText.innerText = "開始！";
+                    playBeep(880, 0.5);
+                    setTimeout(() => { 
+                        Elements.cardText.classList.remove('countdown-mode');
+                        callback(); 
+                    }, 800);
+                }
+            }, 1000);
+        }
+
+        function processNextCard() {
+            if (AppState.currentIndex >= AppState.currentSession.length) {
+                finish();
+                return;
+            }
+            
+            const fuda = AppState.currentSession[AppState.currentIndex];
+            Elements.cardText.classList.remove('animate-in', 'answer-mode');
+            Elements.cardText.classList.add('animate-out');
+            
+            ManagedTimer.start(() => {
+                Elements.cardText.innerText = fuda.lower;
+                playBeep(880, 0.1); 
+                Elements.cardText.classList.remove('animate-out');
+                Elements.cardText.classList.add('animate-in');
+                
+                Elements.statusOverlay.innerHTML = `
+                    <div class="current-num">${AppState.currentIndex + 1}</div>
+                    <div class="total-num">/ ${AppState.currentSession.length}</div>
+                `;
+                
+                GaugeState.start(AppState.intervalMs);
+                
+                if (AppState.settings.showAnswerEach) {
+                    ManagedTimer.start(() => {
+                        Elements.cardText.innerText = fuda.upper;
+                        Elements.cardText.classList.add('answer-mode');
+                        playBeep(660, 0.05);
+                        
+                        ManagedTimer.start(() => {
+                            AppState.currentIndex++;
+                            processNextCard();
+                        }, 1500);
+                    }, AppState.intervalMs);
+                } else {
+                    ManagedTimer.start(() => {
+                        AppState.currentIndex++;
+                        processNextCard();
+                    }, AppState.intervalMs);
+                }
+            }, 400);
+        }
+
+        function togglePause() {
+            AppState.isPaused = !AppState.isPaused;
+            Elements.pauseBtn.innerText = AppState.isPaused ? "再スタート" : "一時停止";
+            
+            if (AppState.isPaused) {
+                ManagedTimer.pause();
+                GaugeState.pause();
+            } else {
+                ManagedTimer.resume();
+                GaugeState.resume();
+            }
+        }
+
+        function finish() {
+            stopAll();
+            Elements.cardText.classList.add('countdown-mode');
+            Elements.cardText.innerText = "終了";
+            setTimeout(() => {
+                exitFullscreen();
+                showResults();
+            }, 1200);
+        }
+
+        function showResults() {
+            Elements.setupScreen.style.display = 'none';
+            Elements.resultScreen.style.display = 'block';
+            Elements.resultList.innerHTML = ""; 
+            AppState.currentSession.forEach((fuda, index) => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `<span>${index + 1}枚目</span> ${fuda.upper} <br> <small>${fuda.lower}</small>`;
+                Elements.resultList.appendChild(item);
+            });
+        }
+
+        function shuffle(array) {
+            const clone = [...array];
+            for (let i = clone.length - 1; i > 0; i--) {
+                const r = Math.floor(Math.random() * (i + 1));
+                [clone[i], clone[r]] = [clone[r], clone[i]];
+            }
+            return clone;
+        }
+
+        function stopAll() {
+            ManagedTimer.clear();
+            GaugeState.clear();
+            if (AppState.countdownTimerId) {
+                clearInterval(AppState.countdownTimerId);
+                AppState.countdownTimerId = null;
+            }
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
